@@ -1,65 +1,83 @@
-# Modul C: Deteksiya Qaydaları və Məlumatların Maskalanması Təlimatı
+# SOC Modul C: Loq Optimizasiyası və Deteksiya Təlimatı
+> **Əməliyyat Təlimatı və Komandalararası Texniki Tapşırıq**  
+> **Məsul:** Modul C (Modul A — Həsənəli və Modul B — Nilufər üçün)
+
+---
 
 ## 1. Mənbə Məlumatları və Həsənəli (Modul A) üçün Tələblər
 
-### 1.1. Mənbə Loglarının Strukturu (JSONL)
-* **`linux_auth` (`samples/linux_auth/auth.jsonl`):** `timestamp`, `source_type`, `event_type`, `source_ip`, `username`, `outcome`, `process`, `message`, `debug_info`, `password_sample`
-* **`web` (`samples/web/web.jsonl`):** `timestamp`, `source_type`, `event_type`, `source_ip`, `http_method`, `url_path`, `url_query`, `status_code`, `user_agent`, `response_bytes`, `debug_info`
-* **`firewall` (`samples/firewall/firewall.jsonl`):** `timestamp`, `source_type`, `event_type`, `source_ip`, `destination_ip`, `destination_port`, `protocol`, `action`, `rule`, `raw_message`
+Deteksiya qaydalarının pozulmaması və maskalama testlərinin düzgün aparılması üçün Həsənəli (Modul A) xammal loqlar generatorunda aşağıdakı sahələrin mövcudluğunu və açıq mətn formatında ötürülməsini təmin etməlidir:
 
-### 1.2. Həsənəlidən (Modul A) Tələb Olunan Şərtlər
-1. **Sahə Adlarının Standartlaşdırılması:** Bütün log mənbələrində IP ünvanı sahəsi **`source_ip`** kimi adlandırılmalıdır.
-2. **Həssas Məlumatların Əlavə Edilməsi:**
-   * Emal olunmamış ilkin loglarda (raw logs) parol və tokenlər **AÇIQ MƏTN İLƏ** görünməlidir ki, maskalama qaydasının işlədiyi sübut oluna bilsin.
-   * `auth.jsonl` faylında `password_sample` sahəsi (məs: `"Secret123"`), `web.jsonl` faylında isə `url_query` sahəsi (məs: `"token=xyz123secret"`) mütləq olmalıdır.
-3. **Anomaliya və Hücum Ssenarilərinin Yaradılması:** Test dataset-ə aşağıdakı hadisələr daxil edilməlidir:
-   * **`linux_auth`:** 1 dəqiqə ərzində eyni `source_ip`-dən ən azı 5 ardıcıl `failure` hadisəsi (`process: "sshd"`).
-   * **`web`:** 1 dəqiqə ərzində `/login` ünvanına 5-dən çox `401` status kodlu POST sorğusu.
-   * **`firewall`:** 30 saniyə ərzində eyni `source_ip`-dən müxtəlif portlara `BLOCK` olunmuş bağlantılar.
+| Mənbə (`Source`) | Həsənəlidən Tələb Olunan Sahələr | Açıq Həssas Data Örnəyi (`Raw`) | Təyinatı və Rolu |
+| :--- | :--- | :--- | :--- |
+| **`linux_auth`** | `timestamp`, `source_ip`, `username`, `outcome`, `process`, `password_sample` | `password_sample: "Secret123!"` | SSH Brute-Force, Suspicious Admin Login, Password Spraying və Parol Maskalanması testi |
+| **`web_access`** | `timestamp`, `source_ip`, `http_method`, `url_path`, `url_query`, `status_code` | `url_query: "token=xyz123secret"` | Repeated Failed Login və URL Token Maskalanması testi |
+| **`firewall`** | `timestamp`, `source_ip`, `destination_ip`, `destination_port`, `action` | *N/A (Həssas data yoxdur)* | Port Scanning fəaliyyətinin təhlili |
 
----
-
-## 2. Deteksiya Ssenariləri (1–5)
-
-| № | Ssenari Adı | Mənbə | Məntiq və Qayda (SIEM Logic) | Detections üçün Vacib Sahələr (Must Keep) |
-|---|---|---|---|---|
-| **1** | **SSH Brute-Force Attack** | `linux_auth` | `source_type: "linux_auth" AND process: "sshd" AND outcome: "failure"` <br> *(Group: `source_ip` >= 5 / 1 min)* | `timestamp`, `source_type`, `event_type`, `source_ip`, `username`, `outcome`, `process` |
-| **2** | **Suspicious Admin Login** | `linux_auth` | `source_type: "linux_auth" AND outcome: "success" AND username IN ("root", "demo_admin")` | `timestamp`, `source_type`, `event_type`, `source_ip`, `username`, `outcome` |
-| **3** | **Web Credential Stuffing** | `web` | `source_type: "web" AND url_path: "/login" AND http_method: "POST" AND status_code: 401` <br> *(Group: `source_ip` >= 5 / 1 min)* | `timestamp`, `source_type`, `event_type`, `source_ip`, `http_method`, `url_path`, `url_query`, `status_code` |
-| **4** | **Port Scanning Activity** | `firewall` | `source_type: "firewall" AND action: "BLOCK"` <br> *(Group: `source_ip` üzrə distinct `destination_port` >= 3 / 30 sec)* | `timestamp`, `source_type`, `event_type`, `source_ip`, `destination_port`, `action` |
-| **5** | **Critical Port Access Attempt** | `firewall` | `source_type: "firewall" AND action: "BLOCK" AND destination_port IN (22, 3389)` | `timestamp`, `source_type`, `event_type`, `source_ip`, `destination_ip`, `destination_port`, `action` |
+### Modul A üçün Xüsusi Tələblər:
+* **İP Standartlaşdırılması:** Bütün log mənbələrində İP sahəsi istisnasız olaraq `source_ip` adlandırılmalıdır.
+* **Açıq Mətn Sirrləri:** Maskalama testinin işlədiyini yoxlamaq üçün xammal loqlarda (`raw`) parollar və tokenlər açıq şəkildə görünməlidir (maskalama Modul B tərəfindən emal mərhələsində tətbiq olunacaq).
+* **Anomaliya Ssenariləri və Dataset Tələbi:** Köhnə loglar silinmədən generatora aşağıdakı nümunələr daxil edilməlidir:
+  * **SSH Brute-Force:** Eyni `source_ip` və eyni `username` üçün 60 saniyədə $\ge 5$ ədəd `outcome: "failure"`, `process: "sshd"`.
+  * **Repeated Failed Login:** Eyni `source_ip`-dən 60 saniyədə $\ge 5$ ədəd `http_method: "POST"`, `url_path: "/login"`, `status_code: 401`.
+  * **Port Scanning:** Eyni `source_ip`-dən 30 saniyədə $\ge 3$ fərqli `destination_port` üzrə `action: "BLOCK"`.
+  * **Password Spraying (Bir yeni `source_ip` üçün qısa nümunə):** Eyni `source_ip`-dən 60 saniyə ərzində 5 fərqli `username`, hər birinə 1 `failure` (`process: "sshd"`).
+  * **Password Spraying üçün Negative Testlər:** 60 saniyədə ya cəmi 3 fərqli `username`, ya da eyni `username`-ə 5 `failure` (ikinci hal yalnız SSH Brute-Force üçün tətiklənməlidir, Spraying sayılmamalıdır).
 
 ---
 
-## 3. Log Emalı Sistemi üçün Texniki Qaydalar (Nilufər — Modul B)
+## 2. Bütün 5 Deteksiya Ssenarisi və Kritik Sahələr
 
-Nilufər emal pipeline-ını konfiqurasiya edərkən aşağıdakı qaydaları tətbiq etməlidir:
+Modul C tərəfindən tətbiq olunacaq 5 əsas deteksiya qaydası və onların işləməsi üçün vacib olan kritik sahələr:
 
-### 3.1. Qorunmalı Sahələr (Must Keep)
-Deteksiya qaydalarının pozulmaması üçün bu sahələr **heç bir halda silinməməlidir**:
-* `timestamp`, `source_type`, `event_type`, `source_ip`, `username`, `outcome`, `process`, `http_method`, `url_path`, `url_query`, `status_code`, `destination_ip`, `destination_port`, `action`.
+| # | Ssenari Adı | Mənbə | Məntiq və Qayda (SIEM Logic) | Deteksiya üçün Vacib Sahələr |
+| :-: | :--- | :--- | :--- | :--- |
+| **1** | **SSH Brute-Force** | `linux_auth` | Eyni `source_ip` və eyni `username` üzrə 60 saniyədə $\ge 5$ `outcome: "failure"`, `process: "sshd"` | `timestamp`, `source_ip`, `username`, `outcome`, `process` |
+| **2** | **Suspicious Admin Login** | `linux_auth` | `process: "sshd"`, `outcome: "success"`, `username` IN (`"root"`, `"demo_admin"`) | `timestamp`, `source_ip`, `username`, `outcome`, `process` |
+| **3** | **Repeated Failed Login** | `web_access` | Eyni `source_ip`-dən 60 saniyədə $\ge 5$ hadisə: `http_method: "POST"`, `url_path: "/login"`, `status_code: 401` | `timestamp`, `source_ip`, `http_method`, `url_path`, `status_code` |
+| **4** | **Port Scanning** | `firewall` | Eyni `source_ip`-dən 30 saniyədə $\ge 3$ fərqli `destination_port`, `action: "BLOCK"` | `timestamp`, `source_ip`, `destination_port`, `action` |
+| **5** | **Password Spraying** | `linux_auth` | Eyni `source_ip`-dən 60 saniyədə $\ge 5$ fərqli `username`; hər `username` üçün ən çox 2 `outcome: "failure"`; ümumi `failure` sayı $\ge 5$; `process: "sshd"` *(Bir `username`-ə 5 `failure` halı spraying sayılmır)* | `timestamp`, `source_ip`, `username`, `outcome`, `process` |
 
-> **Xüsusi Qeyd (Hadisə Filtrasiyası):** Deteksiya ssenarilərinin pozulmaması üçün `outcome: "failure"`, `status_code: 401` və `action: "BLOCK"` olan hadisələri pipeline-da filtrləyib silmək **qadağandır**.
+---
 
-### 3.2. Maskalanmalı Həssas Məlumatlar (Masking Rules)
-Həssas verilənlərin yalnız dəyəri `[REDACTED]` ilə əvəzlənməlidir:
-1. **Parollar (`password_sample`):** `(?i)"password_sample"\s*:\s*"[^"]*"` $\rightarrow$ `"password_sample": "[REDACTED]"`
-2. **URL Query Tokenləri (`url_query`):** `(?i)(token\|session\|key)=([^&]+)` $\rightarrow$ `${1}=[REDACTED]`
+## 3. Log Emalı Pipeline-ı üçün Texniki Tapşırıq (Nilufər - Modul B)
 
-### 3.3. Silinməli Artıq Sahələr (Safe to Drop)
-Deteksiya ssenarilərində istifadə olunmayan və təhlükəsiz şəkildə silinə bilən sahələr:
-* `linux_auth`: `debug_info`, `message`
-* `web`: `debug_info`, `user_agent`, `response_bytes`
-* `firewall`: `raw_message`, `rule`, `protocol`
+Nilufər emal qaydalarını konfiqurasiya edərkən deteksiya keyfiyyətinin qorunması məqsədilə aşağıdakı matrisə riayət etməlidir:
+
+| Sahə Adı (`Field Name`) | Aksiya (`Action`) | Maskalama Qaydası / Təsvir | Kritiklik Məntiqi |
+| :--- | :---: | :--- | :--- |
+| `source_ip`, `timestamp`, `username`, `outcome`, `process`, `http_method`, `url_path`, `status_code`, `destination_ip`, `destination_port`, `action` | **MUST KEEP** | Dəyişdirilmədən saxlamaq | 1–5 saylı deteksiya qaydalarının işləməsi üçün mütləqdir. Sahə silinərsə deteksiya sıfırlanar. |
+| `password_sample` | **MASKING** | Bütün dəyəri `[REDACTED]` ilə əvəzləmək | Sahə silinmir, saxlanılır. Açıq parolların SIEM-ə sızmasının qarşısı alınır. |
+| `url_query` | **MASKING** | Yalnız token dəyəri bağlanır: `token=[REDACTED]`, `url_path` və URL strukturu qalır | URL strukturu qorunur, daxilindəki həssas token dəyəri maskalanır. |
+| `debug_info`, `message`, `user_agent`, `response_bytes`, `raw_message`, `rule`, `protocol` | **SAFE TO DROP** | Kəsilir / Silinir (`Drop`) | Heç bir deteksiya ssenarisində istifadə olunmur. Təhlükəsiz şəkildə kəsilə bilər. |
+
+### Modul B üçün Xüsusi Qeyd:
+1. **Sahə Mühafizəsi:** Deteksiya üçün tələb olunan kritik sahələri silməyin. `password_sample` sahəsi ləğv edilməməli, yalnız dəyəri tam `[REDACTED]` edilməlidir.
+2. **Hadisə Filtrasiyası Qadağası:** Həcmi azaltmaq məqsədilə `outcome: "failure"`, `status_code: 401` və `action: "BLOCK"` hadisələri heç bir halda filtrlənib silinməməlidir (`Drop` olunmamalıdır).
 
 ---
 
 ## 4. Test və Doğrulama Metodologiyası (Validation Workflow)
 
-Modul C tərəfindən emalın düzgünlüyü aşağıdakı kimi yoxlanılır:
+Modul C tərəfindən xammal loqlar (Həsənəli) və emal olunmuş loqlar (Nilufər) müqayisə edilərək aşağıdakı 2 əsas meyar avtomatik yoxlanılır:
 
-1. **İlkin Data (Test A):** `raw_logs.jsonl` faylı üzərində deteksiya skripti çalışdırılır (parol və tokenlərin açıq yazıldığı təsdiqlənir).
-2. **Emal Olunmuş Data (Test B):** `processed_logs.jsonl` faylı üzərində eyni skript təkrar edilir.
-3. **Nəticənin Qiymətləndirilməsi:**
-   * **0% Deteksiya İtkisi:** Test A və Test B-də yaranan alert-lərin sayı və məzmunu 100% üst-üstə düşməlidir.
-   * **100% Maskalama:** `processed_logs.jsonl` faylında bütün `password_sample` və `url_query` tokenləri `[REDACTED]` olmalıdır.
+* **0% Deteksiya İtkisi (Zero Loss):** Xammal (`raw`) və emal olunmuş (`processed`) loqlar üzrə tətiklənən ssenari sayları tam bərabər olmalıdır.
+* **100% Məxfilik / Maskalama Keyfiyyəti:** Raw loglarda sirlər açıq şəkildə mövcud olmalı, emal olunmuş loglarda isə tam `[REDACTED]` formasına salınmalıdır.
+
+```python
+# Validation Logic (test_detection.py)
+
+# 1. Raw data üzərində alert-lər
+raw_alerts = run_detection_rules(raw_logs_jsonl)
+
+# 2. Emal olunmuş data üzərində alert-lər
+proc_alerts = run_detection_rules(processed_logs_jsonl)
+
+# 3. 0% Deteksiya İtkisi doğrulandı (alert sayları bərabərdir)
+assert raw_alerts == proc_alerts
+
+# 4. Raw-da açıq sirlər (parol və token) var
+assert has_unmasked_secrets(raw_logs_jsonl) == True
+
+# 5. Emal olunmuşda bütün sirlər maskalanıb
+assert has_unmasked_secrets(processed_logs_jsonl) == False
