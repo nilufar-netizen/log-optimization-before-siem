@@ -17,12 +17,13 @@ Deteksiya qaydalarının pozulmaması və maskalama testlərinin düzgün aparı
 ### Modul A üçün Xüsusi Tələblər:
 * **İP Standartlaşdırılması:** Bütün log mənbələrində İP sahəsi istisnasız olaraq `source_ip` adlandırılmalıdır.
 * **Açıq Mətn Sirrləri:** Maskalama testinin işlədiyini yoxlamaq üçün xammal loqlarda (`raw`) parollar və tokenlər açıq şəkildə görünməlidir (maskalama Modul B tərəfindən emal mərhələsində tətbiq olunacaq).
-* **Anomaliya Ssenariləri və Dataset Tələbi:** Köhnə loglar silinmədən generatora aşağıdakı nümunələr daxil edilməlidir:
+* **Anomaliya Ssenariləri və Dataset Tələbi:** Köhnə loglar saxlanılır. Generatora aşağıdakı nümunələr daxil edilməlidir (Positive və negative ssenarilər eyni `source_ip` üzərində olmamalıdır):
   * **SSH Brute-Force:** Eyni `source_ip` və eyni `username` üçün 60 saniyədə $\ge 5$ ədəd `outcome: "failure"`, `process: "sshd"`.
-  * **Repeated Failed Login:** Eyni `source_ip`-dən 60 saniyədə $\ge 5$ ədəd `http_method: "POST"`, `url_path: "/login"`, `status_code: 401`.
+  * **Repeated Failed Login:** Eyni `source_ip`-dən 60 saniyədə $\ge 5$ hadisə: `http_method: "POST"`, `url_path: "/login"`, `status_code: 401`.
   * **Port Scanning:** Eyni `source_ip`-dən 30 saniyədə $\ge 3$ fərqli `destination_port` üzrə `action: "BLOCK"`.
-  * **Password Spraying (Bir yeni `source_ip` üçün qısa nümunə):** Eyni `source_ip`-dən 60 saniyə ərzində 5 fərqli `username`, hər birinə 1 `failure` (`process: "sshd"`).
-  * **Password Spraying üçün Negative Testlər:** 60 saniyədə ya cəmi 3 fərqli `username`, ya da eyni `username`-ə 5 `failure` (ikinci hal yalnız SSH Brute-Force üçün tətiklənməlidir, Spraying sayılmamalıdır).
+  * **Positive (Password Spraying):** Yeni `source_ip`, 60 saniyədə 5 fərqli `username`, hər birinə 1 `failure` (`process: "sshd"`). Bu, Password Spraying üçündür.
+  * **Negative 1:** Başqa `source_ip`, 60 saniyədə yalnız 3 fərqli `username`, hər birinə 1 `failure`. Spraying sayılmasın.
+  * **Negative 2:** Üçüncü `source_ip`, eyni `username`-ə 60 saniyədə 5 `failure`. Bu, yalnız SSH brute-force üçündür, spraying deyil.
 
 ---
 
